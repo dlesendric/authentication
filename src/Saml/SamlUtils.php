@@ -26,6 +26,9 @@ use LightSaml\Model\Protocol\AuthnRequest;
 use LightSaml\Model\Protocol\Response;
 use LightSaml\Model\XmlDSig\SignatureWriter;
 use LightSaml\SamlConstants;
+use RobRichards\XMLSecLibs\XMLSecurityDSig;
+use RobRichards\XMLSecLibs\XMLSecurityKey;
+use Symfony\Component\HttpFoundation\RedirectResponse;
 
 class SamlUtils
 {
@@ -59,9 +62,9 @@ class SamlUtils
 
         $certificate = new X509Certificate();
         $certificate->loadPem($saml_crt);
-        $private_key = KeyHelper::createPrivateKey($saml_key, '', false);
+        $private_key = KeyHelper::createPrivateKey($saml_key, '', false, XMLSecurityKey::RSA_SHA256);
 
-        $authn_request->setSignature(new SignatureWriter($certificate, $private_key));
+        $authn_request->setSignature(new SignatureWriter($certificate, $private_key, XMLSecurityDSig::SHA256));
 
         $serialization_context = new SerializationContext();
         $authn_request->serialize($serialization_context->getDocument(), $serialization_context);
@@ -72,7 +75,7 @@ class SamlUtils
         $message_context = new MessageContext();
         $message_context->setMessage($authn_request);
 
-        /** @var \Symfony\Component\HttpFoundation\RedirectResponse $http_response */
+        /** @var RedirectResponse $http_response */
         $http_response = $redirect_binding->send($message_context);
 
         return $http_response->getTargetUrl();
@@ -110,6 +113,8 @@ class SamlUtils
                 }
             }
         }
+
+        return null;
     }
 
     public function getSessionDurationType(Response $response)
