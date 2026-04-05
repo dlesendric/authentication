@@ -8,6 +8,8 @@
 
 namespace ActiveCollab\Authentication\Test\Saml;
 
+use ActiveCollab\Authentication\Saml\Exception\InvalidSamlResponseException;
+use ActiveCollab\Authentication\Saml\Exception\InvalidSamlSignatureException;
 use ActiveCollab\Authentication\Saml\SamlUtils;
 use ActiveCollab\Authentication\Session\SessionInterface;
 use ActiveCollab\Authentication\Test\TestCase\TestCase;
@@ -17,14 +19,16 @@ class SamlUtilsTest extends TestCase
 {
     private SamlUtils $saml_utils;
     private array $raw_saml_response;
+    private string $idp_certificate;
 
     public function setUp(): void
     {
         parent::setUp();
 
         $this->saml_utils = new SamlUtils();
+        $this->idp_certificate = file_get_contents(__DIR__ . '/../Fixtures/saml.crt');
         $this->raw_saml_response = [
-            'SAMLResponse' => 'PD94bWwgdmVyc2lvbj0iMS4wIj8+DQo8c2FtbHA6UmVzcG9uc2UgeG1sbnM6c2FtbHA9InVybjpvYXNpczpuYW1lczp0YzpTQU1MOjIuMDpwcm90b2NvbCIgSUQ9Il9iMTkxMGJiMDM2OTQ0ODAzYTVkZTA5ZTU0OWYwNzJiYWIyMDg3Yjk1Y2YiIFZlcnNpb249IjIuMCIgSXNzdWVJbnN0YW50PSIyMDE2LTExLTE1VDA5OjU1OjA1WiIgRGVzdGluYXRpb249Imh0dHA6Ly9sb2NhbGhvc3Q6ODg4Ny9hcGkvdjEvdXNlci1zZXNzaW9uIj48c2FtbDpJc3N1ZXIgeG1sbnM6c2FtbD0idXJuOm9hc2lzOm5hbWVzOnRjOlNBTUw6Mi4wOmFzc2VydGlvbiI+aHR0cDovL2xvY2FsaG9zdDo4ODg3L3Byb2plY3RzPC9zYW1sOklzc3Vlcj48ZHM6U2lnbmF0dXJlIHhtbG5zOmRzPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwLzA5L3htbGRzaWcjIj4NCiAgPGRzOlNpZ25lZEluZm8+PGRzOkNhbm9uaWNhbGl6YXRpb25NZXRob2QgQWxnb3JpdGhtPSJodHRwOi8vd3d3LnczLm9yZy8yMDAxLzEwL3htbC1leGMtYzE0biMiLz4NCiAgICA8ZHM6U2lnbmF0dXJlTWV0aG9kIEFsZ29yaXRobT0iaHR0cDovL3d3dy53My5vcmcvMjAwMC8wOS94bWxkc2lnI3JzYS1zaGExIi8+DQogIDxkczpSZWZlcmVuY2UgVVJJPSIjX2IxOTEwYmIwMzY5NDQ4MDNhNWRlMDllNTQ5ZjA3MmJhYjIwODdiOTVjZiI+PGRzOlRyYW5zZm9ybXM+PGRzOlRyYW5zZm9ybSBBbGdvcml0aG09Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvMDkveG1sZHNpZyNlbnZlbG9wZWQtc2lnbmF0dXJlIi8+PGRzOlRyYW5zZm9ybSBBbGdvcml0aG09Imh0dHA6Ly93d3cudzMub3JnLzIwMDEvMTAveG1sLWV4Yy1jMTRuIyIvPjwvZHM6VHJhbnNmb3Jtcz48ZHM6RGlnZXN0TWV0aG9kIEFsZ29yaXRobT0iaHR0cDovL3d3dy53My5vcmcvMjAwMC8wOS94bWxkc2lnI3NoYTEiLz48ZHM6RGlnZXN0VmFsdWU+NERoS1BwbHRLQ1ZYcjRmNjhQZmxoOE8vTTlzPTwvZHM6RGlnZXN0VmFsdWU+PC9kczpSZWZlcmVuY2U+PC9kczpTaWduZWRJbmZvPjxkczpTaWduYXR1cmVWYWx1ZT5SZU9qL2xFemlBc3dKUWNmQ1RBYzJxYm5aS1MrT2FZUFcydWh1UW9hZVgzbjFibXBRZWcySnlOd0dHcWlHd0lZN0JwU3poMEFEeGhwZlJYSjEwZ2xNQmhNZlVmcnBTN3hMYm82VThpS1A4ZjBDUUJtd0Z2WVhpU2RrRVg1bGIyRkY0bkY0b1M4dVJWVkcrUGpjL0hWYkJOcnQxaDg0bHRTYTdwMnZmSDdua1hkRmI3ZEhQOFFFSUUxY0UzbG0xeU8wbkZLa25KbHNVd0JELzFGbVFDRkFQcEk4cFpaVElibi9ITWlPeUE5VlU0Q1dtNzA0WHlzT2crRkJDZFN6REJzbHNWTktUL01HaCs1bTNnQmhsREl6ZnkvTHZnNGl3YkVZVzdPeWxxZjUxYi9uODU4ekNremM5WVp0MEpvUlZsS1Nkc2cwOVFNcUJWWGFvaG1kYWhpZmc9PTwvZHM6U2lnbmF0dXJlVmFsdWU+DQo8ZHM6S2V5SW5mbz48ZHM6WDUwOURhdGE+PGRzOlg1MDlDZXJ0aWZpY2F0ZT5NSUlEeWpDQ0FyS2dBd0lCQWdJSkFKTk9GdVFkNzI3Y01BMEdDU3FHU0liM0RRRUJCUVVBTUV3eEN6QUpCZ05WQkFZVEFsSlRNUkV3RHdZRFZRUUlFd2hDWld4bmNtRmtaVEVTTUJBR0ExVUVDaE1KVEdsbmFIUlRRVTFNTVJZd0ZBWURWUVFERXcxc2FXZG9kSE5oYld3dVkyOXRNQjRYRFRFMU1Ea3hNekU1TURFME1Gb1hEVEkxTURreE1ERTVNREUwTUZvd1RERUxNQWtHQTFVRUJoTUNVbE14RVRBUEJnTlZCQWdUQ0VKbGJHZHlZV1JsTVJJd0VBWURWUVFLRXdsTWFXZG9kRk5CVFV3eEZqQVVCZ05WQkFNVERXeHBaMmgwYzJGdGJDNWpiMjB3Z2dFaU1BMEdDU3FHU0liM0RRRUJBUVVBQTRJQkR3QXdnZ0VLQW9JQkFRQzdwVUtPUE15RTJvU2NITFBHSkZUZXBLOWoxSDAzZS9zL1duT053OFp3WUJhQklZSVF1WDZ1RThqRlBkRDB1UVNhWXBPdzVoNVRncTZ4QlY3bTJrUE81M2hzOGdFR1dSYkNkQ3R4aTlFTUp3SU9Zcitpc0cwTitEdlY5S3liSmY2dHFjTTUwUGlGalZOdGZ4OEl1Yk1wQUtDYnF1YXFkTGFISDByZ1AxaGJnbkdtNVlaa3lFSzRzOHh1TFVEUzZxTDdON2EvZXoyWms0NXUzTDNxRmN1bmNQSTVCVG5KZzZmcWx5cERoQ0RPQkk1TGp3MTBIbWdaSFBJWHpPaEVQVlYrclgyaUhoRjRWOXZ6RW9lSVVBQllYUVZOUlJOSHBQZFZzSzZpVFRreXZickdKL3R2M29GWmhOT1NMMEt1eStROW5sRTlmRUZxeVV5ZEo2N3ZzWHFaQWdNQkFBR2pnYTR3Z2Fzd0hRWURWUjBPQkJZRUZIUFQ2RXkxcWd4TXpNSXQyZDNPV3V3emZQU1VNSHdHQTFVZEl3UjFNSE9BRkhQVDZFeTFxZ3hNek1JdDJkM09XdXd6ZlBTVW9WQ2tUakJNTVFzd0NRWURWUVFHRXdKU1V6RVJNQThHQTFVRUNCTUlRbVZzWjNKaFpHVXhFakFRQmdOVkJBb1RDVXhwWjJoMFUwRk5UREVXTUJRR0ExVUVBeE1OYkdsbmFIUnpZVzFzTG1OdmJZSUpBSk5PRnVRZDcyN2NNQXdHQTFVZEV3UUZNQU1CQWY4d0RRWUpLb1pJaHZjTkFRRUZCUUFEZ2dFQkFIa0h0d0pCb2VPaHZyMDZNME1pa0tjOTl6ZTZUcUFHdmYrUWtnRm9WMXNXR0FoM05LY0FSK1hTbGZLK3NRV3JIR2tpaWE1aFdLZ0FQTU1VYmtMUDlERldramJLMjQxaXNDWlpEL0x2QTFhbmJWKzdQaWRuK3N3WjVkUjd5blgydmowa0ZZYitWc0dQa2F2TmNqOFJOL0RkdWhOL1RtaTVzUUFsV2hhdzA2VUFlRXFYdEZlTGJUZ0xmZkJhajdQbVIwSVlqdlRaQTBYMkZkUnUwR1hSeG43emdoanB2U3E5bnVXYTNwR2JmZFZ0TDZHSWt3WVVQY0R6anI0T2VHWE5tSVplL3dNQ256NlZHWlkrTFVnemkvNERBQzZWM09qTXVoZHFTLzIrbzErQ1hDd04wOENJSFFWNitBVUJlbkVWYXdNc2lhZExCZ3gza0ZlNWlYcllSTUE9PC9kczpYNTA5Q2VydGlmaWNhdGU+PC9kczpYNTA5RGF0YT48L2RzOktleUluZm8+PC9kczpTaWduYXR1cmU+PEFzc2VydGlvbiB4bWxucz0idXJuOm9hc2lzOm5hbWVzOnRjOlNBTUw6Mi4wOmFzc2VydGlvbiIgSUQ9Il9jZWI4NjIwODc4MTg2NjVmMDM5MzdkMzE4MGU3OGJkY2UzZWNhMDBhZDQiIFZlcnNpb249IjIuMCIgSXNzdWVJbnN0YW50PSIyMDE2LTExLTE1VDA5OjU1OjA1WiI+PElzc3Vlcj5odHRwOi8vbG9jYWxob3N0Ojg4ODcvcHJvamVjdHM8L0lzc3Vlcj48U3ViamVjdD48TmFtZUlEIEZvcm1hdD0idXJuOm9hc2lzOm5hbWVzOnRjOlNBTUw6MS4xOm5hbWVpZC1mb3JtYXQ6ZW1haWxBZGRyZXNzIj5vd25lckBjb21wYW55LmNvbTwvTmFtZUlEPjxTdWJqZWN0Q29uZmlybWF0aW9uIE1ldGhvZD0idXJuOm9hc2lzOm5hbWVzOnRjOlNBTUw6Mi4wOmNtOmJlYXJlciI+PFN1YmplY3RDb25maXJtYXRpb25EYXRhIEluUmVzcG9uc2VUbz0iaWRfb2ZfdGhlX2F1dGhuX3JlcXVlc3QiIE5vdE9uT3JBZnRlcj0iMjAxNi0xMS0xNVQwOTo1NjowNVoiIFJlY2lwaWVudD0iaHR0cDovL2xvY2FsaG9zdDo4ODg3L2FwaS92MS91c2VyLXNlc3Npb24iLz48L1N1YmplY3RDb25maXJtYXRpb24+PC9TdWJqZWN0PjxDb25kaXRpb25zIE5vdEJlZm9yZT0iMjAxNi0xMS0xNVQwOTo1NTowNVoiIE5vdE9uT3JBZnRlcj0iMjAxNi0xMS0xNVQwOTo1NjowNVoiPjxBdWRpZW5jZVJlc3RyaWN0aW9uPjxBdWRpZW5jZT5odHRwOi8vbG9jYWxob3N0Ojg4ODcvYXBpL3YxL3VzZXItc2Vzc2lvbjwvQXVkaWVuY2U+PC9BdWRpZW5jZVJlc3RyaWN0aW9uPjwvQ29uZGl0aW9ucz48QXR0cmlidXRlU3RhdGVtZW50PjxBdHRyaWJ1dGUgTmFtZT0iaHR0cDovL3NjaGVtYXMueG1sc29hcC5vcmcvd3MvMjAwNS8wNS9pZGVudGl0eS9jbGFpbXMvZW1haWxhZGRyZXNzIj48QXR0cmlidXRlVmFsdWU+b3duZXJAY29tcGFueS5jb208L0F0dHJpYnV0ZVZhbHVlPjwvQXR0cmlidXRlPjxBdHRyaWJ1dGUgTmFtZT0ic2Vzc2lvbl9kdXJhdGlvbl90eXBlIj48QXR0cmlidXRlVmFsdWU+bG9uZzwvQXR0cmlidXRlVmFsdWU+PC9BdHRyaWJ1dGU+PC9BdHRyaWJ1dGVTdGF0ZW1lbnQ+PEF1dGhuU3RhdGVtZW50IEF1dGhuSW5zdGFudD0iMjAxNi0xMS0xNVQwOTo0NTowNVoiIFNlc3Npb25JbmRleD0iX3NvbWVfc2Vzc2lvbl9pbmRleCI+PEF1dGhuQ29udGV4dD48QXV0aG5Db250ZXh0Q2xhc3NSZWY+dXJuOm9hc2lzOm5hbWVzOnRjOlNBTUw6Mi4wOmFjOmNsYXNzZXM6UGFzc3dvcmRQcm90ZWN0ZWRUcmFuc3BvcnQ8L0F1dGhuQ29udGV4dENsYXNzUmVmPjwvQXV0aG5Db250ZXh0PjwvQXV0aG5TdGF0ZW1lbnQ+PC9Bc3NlcnRpb24+PC9zYW1scDpSZXNwb25zZT4NCg==',
+            'SAMLResponse' => 'PD94bWwgdmVyc2lvbj0iMS4wIj8+CjxzYW1scDpSZXNwb25zZSB4bWxuczpzYW1scD0idXJuOm9hc2lzOm5hbWVzOnRjOlNBTUw6Mi4wOnByb3RvY29sIiBJRD0iXzlmOGE5MmM4OWZhMTRmN2Y5MjRhMDc5NWIzZTVjNzYwODc4M2JmOGU1OCIgVmVyc2lvbj0iMi4wIiBJc3N1ZUluc3RhbnQ9IjIwMjYtMDQtMDVUMDY6Mzc6NTRaIiBEZXN0aW5hdGlvbj0iaHR0cDovL2xvY2FsaG9zdDo4ODg3L3Byb2plY3RzIj48c2FtbDpJc3N1ZXIgeG1sbnM6c2FtbD0idXJuOm9hc2lzOm5hbWVzOnRjOlNBTUw6Mi4wOmFzc2VydGlvbiI+aHR0cDovL2xvY2FsaG9zdDo4ODg3L3Byb2plY3RzPC9zYW1sOklzc3Vlcj48ZHM6U2lnbmF0dXJlIHhtbG5zOmRzPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwLzA5L3htbGRzaWcjIj4KICA8ZHM6U2lnbmVkSW5mbz48ZHM6Q2Fub25pY2FsaXphdGlvbk1ldGhvZCBBbGdvcml0aG09Imh0dHA6Ly93d3cudzMub3JnLzIwMDEvMTAveG1sLWV4Yy1jMTRuIyIvPgogICAgPGRzOlNpZ25hdHVyZU1ldGhvZCBBbGdvcml0aG09Imh0dHA6Ly93d3cudzMub3JnLzIwMDEvMDQveG1sZHNpZy1tb3JlI3JzYS1zaGEyNTYiLz4KICA8ZHM6UmVmZXJlbmNlIFVSST0iI185ZjhhOTJjODlmYTE0ZjdmOTI0YTA3OTViM2U1Yzc2MDg3ODNiZjhlNTgiPjxkczpUcmFuc2Zvcm1zPjxkczpUcmFuc2Zvcm0gQWxnb3JpdGhtPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwLzA5L3htbGRzaWcjZW52ZWxvcGVkLXNpZ25hdHVyZSIvPjxkczpUcmFuc2Zvcm0gQWxnb3JpdGhtPSJodHRwOi8vd3d3LnczLm9yZy8yMDAxLzEwL3htbC1leGMtYzE0biMiLz48L2RzOlRyYW5zZm9ybXM+PGRzOkRpZ2VzdE1ldGhvZCBBbGdvcml0aG09Imh0dHA6Ly93d3cudzMub3JnLzIwMDEvMDQveG1sZW5jI3NoYTI1NiIvPjxkczpEaWdlc3RWYWx1ZT5HRG9aWUkyV3QvOG13V1R1bDgxL3dTSHBOMC9ZenMvTW5mL3NQUnBORE84PTwvZHM6RGlnZXN0VmFsdWU+PC9kczpSZWZlcmVuY2U+PC9kczpTaWduZWRJbmZvPjxkczpTaWduYXR1cmVWYWx1ZT5nSnFJM1BHbVlJb0wzS2g0cnZjOEpKRm9ZUjl3U01vbzR1Wm9xQXczM04zdFNabDlkcmFzeXNOM202bklGY2JQU3g1cURaT3c1aGRzYWl6RXhLOTBOZVpwTHEwOUExdjUvWU9EamVtTW5lRkU2RS8xUEd5dGw5a3BsTEVZTFB3eC96enZpbWxCN1R5cFBidmtXTDduU2RCelJXclArbUZXbnI2SEprbEQrbVdnTW5seCtsTEE2c2Z4bzdFSkRPZTYvd3NOVWtMQTk1ZlNOMmNSbGExTDJOSXZrNTZuMDVjVnRBSGdBVzA3aHcvSlg5cjVmcnNyTHBQTWZIZG1OYlEyZEF2ZUF2bU1peDdYRkx0UTdjVmxqU1NNeXdnOGZkbXorYWdMd3dhbllqMHUycnpENkM2N2JFL3Y0SjVEYUVacXZHWXNQdjNGaTNUTDNYcE5VRG8waHc9PTwvZHM6U2lnbmF0dXJlVmFsdWU+CjxkczpLZXlJbmZvPjxkczpYNTA5RGF0YT48ZHM6WDUwOUNlcnRpZmljYXRlPk1JSUR5akNDQXJLZ0F3SUJBZ0lKQUpOT0Z1UWQ3MjdjTUEwR0NTcUdTSWIzRFFFQkJRVUFNRXd4Q3pBSkJnTlZCQVlUQWxKVE1SRXdEd1lEVlFRSUV3aENaV3huY21Ga1pURVNNQkFHQTFVRUNoTUpUR2xuYUhSVFFVMU1NUll3RkFZRFZRUURFdzFzYVdkb2RITmhiV3d1WTI5dE1CNFhEVEUxTURreE16RTVNREUwTUZvWERUSTFNRGt4TURFNU1ERTBNRm93VERFTE1Ba0dBMVVFQmhNQ1VsTXhFVEFQQmdOVkJBZ1RDRUpsYkdkeVlXUmxNUkl3RUFZRFZRUUtFd2xNYVdkb2RGTkJUVXd4RmpBVUJnTlZCQU1URFd4cFoyaDBjMkZ0YkM1amIyMHdnZ0VpTUEwR0NTcUdTSWIzRFFFQkFRVUFBNElCRHdBd2dnRUtBb0lCQVFDN3BVS09QTXlFMm9TY0hMUEdKRlRlcEs5ajFIMDNlL3MvV25PTnc4WndZQmFCSVlJUXVYNnVFOGpGUGREMHVRU2FZcE93NWg1VGdxNnhCVjdtMmtQTzUzaHM4Z0VHV1JiQ2RDdHhpOUVNSndJT1lyK2lzRzBOK0R2VjlLeWJKZjZ0cWNNNTBQaUZqVk50Zng4SXViTXBBS0NicXVhcWRMYUhIMHJnUDFoYmduR201WVpreUVLNHM4eHVMVURTNnFMN043YS9lejJaazQ1dTNMM3FGY3VuY1BJNUJUbkpnNmZxbHlwRGhDRE9CSTVMancxMEhtZ1pIUElYek9oRVBWVityWDJpSGhGNFY5dnpFb2VJVUFCWVhRVk5SUk5IcFBkVnNLNmlUVGt5dmJyR0ovdHYzb0ZaaE5PU0wwS3V5K1E5bmxFOWZFRnF5VXlkSjY3dnNYcVpBZ01CQUFHamdhNHdnYXN3SFFZRFZSME9CQllFRkhQVDZFeTFxZ3hNek1JdDJkM09XdXd6ZlBTVU1Id0dBMVVkSXdSMU1IT0FGSFBUNkV5MXFneE16TUl0MmQzT1d1d3pmUFNVb1ZDa1RqQk1NUXN3Q1FZRFZRUUdFd0pTVXpFUk1BOEdBMVVFQ0JNSVFtVnNaM0poWkdVeEVqQVFCZ05WQkFvVENVeHBaMmgwVTBGTlRERVdNQlFHQTFVRUF4TU5iR2xuYUhSellXMXNMbU52YllJSkFKTk9GdVFkNzI3Y01Bd0dBMVVkRXdRRk1BTUJBZjh3RFFZSktvWklodmNOQVFFRkJRQURnZ0VCQUhrSHR3SkJvZU9odnIwNk0wTWlrS2M5OXplNlRxQUd2ZitRa2dGb1Yxc1dHQWgzTktjQVIrWFNsZksrc1FXckhHa2lpYTVoV0tnQVBNTVVia0xQOURGV2tqYksyNDFpc0NaWkQvTHZBMWFuYlYrN1BpZG4rc3daNWRSN3luWDJ2ajBrRlliK1ZzR1BrYXZOY2o4Uk4vRGR1aE4vVG1pNXNRQWxXaGF3MDZVQWVFcVh0RmVMYlRnTGZmQmFqN1BtUjBJWWp2VFpBMFgyRmRSdTBHWFJ4bjd6Z2hqcHZTcTludVdhM3BHYmZkVnRMNkdJa3dZVVBjRHpqcjRPZUdYTm1JWmUvd01Dbno2VkdaWStMVWd6aS80REFDNlYzT2pNdWhkcVMvMitvMStDWEN3TjA4Q0lIUVY2K0FVQmVuRVZhd01zaWFkTEJneDNrRmU1aVhyWVJNQT08L2RzOlg1MDlDZXJ0aWZpY2F0ZT48L2RzOlg1MDlEYXRhPjwvZHM6S2V5SW5mbz48L2RzOlNpZ25hdHVyZT48c2FtbHA6U3RhdHVzPjxzYW1scDpTdGF0dXNDb2RlIFZhbHVlPSJ1cm46b2FzaXM6bmFtZXM6dGM6U0FNTDoyLjA6c3RhdHVzOlN1Y2Nlc3MiLz48L3NhbWxwOlN0YXR1cz48QXNzZXJ0aW9uIHhtbG5zPSJ1cm46b2FzaXM6bmFtZXM6dGM6U0FNTDoyLjA6YXNzZXJ0aW9uIiBJRD0iXzdkMjU3ZWY4M2ViMjJmZWIyYjQ2NGMyZTkwNjA2ZjY2ZmJhN2M5ZmMzMyIgVmVyc2lvbj0iMi4wIiBJc3N1ZUluc3RhbnQ9IjIwMjYtMDQtMDVUMDY6Mzc6NTRaIj48SXNzdWVyPmh0dHA6Ly9sb2NhbGhvc3Q6ODg4Ny9wcm9qZWN0czwvSXNzdWVyPjxkczpTaWduYXR1cmUgeG1sbnM6ZHM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvMDkveG1sZHNpZyMiPgogIDxkczpTaWduZWRJbmZvPjxkczpDYW5vbmljYWxpemF0aW9uTWV0aG9kIEFsZ29yaXRobT0iaHR0cDovL3d3dy53My5vcmcvMjAwMS8xMC94bWwtZXhjLWMxNG4jIi8+CiAgICA8ZHM6U2lnbmF0dXJlTWV0aG9kIEFsZ29yaXRobT0iaHR0cDovL3d3dy53My5vcmcvMjAwMS8wNC94bWxkc2lnLW1vcmUjcnNhLXNoYTI1NiIvPgogIDxkczpSZWZlcmVuY2UgVVJJPSIjXzdkMjU3ZWY4M2ViMjJmZWIyYjQ2NGMyZTkwNjA2ZjY2ZmJhN2M5ZmMzMyI+PGRzOlRyYW5zZm9ybXM+PGRzOlRyYW5zZm9ybSBBbGdvcml0aG09Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvMDkveG1sZHNpZyNlbnZlbG9wZWQtc2lnbmF0dXJlIi8+PGRzOlRyYW5zZm9ybSBBbGdvcml0aG09Imh0dHA6Ly93d3cudzMub3JnLzIwMDEvMTAveG1sLWV4Yy1jMTRuIyIvPjwvZHM6VHJhbnNmb3Jtcz48ZHM6RGlnZXN0TWV0aG9kIEFsZ29yaXRobT0iaHR0cDovL3d3dy53My5vcmcvMjAwMS8wNC94bWxlbmMjc2hhMjU2Ii8+PGRzOkRpZ2VzdFZhbHVlPmFweHZSTGN0dXJVWWwwS3dId1dWK2dvdjVzN0VkeHkzdy9tdUdkdDk0aEE9PC9kczpEaWdlc3RWYWx1ZT48L2RzOlJlZmVyZW5jZT48L2RzOlNpZ25lZEluZm8+PGRzOlNpZ25hdHVyZVZhbHVlPllWcW1XS3B1Qmh1clQwTyswdlR5VHZ1RHpsM2UxWmhnd0Z0eE9URk5abFlER3R0UzhTZ0VtZXplcUtRajM3TU5TMk1rdkhvK3oybWc0WEQxS1lla3pKYWtjV3VvcFUrcFoxZ2FXOGh5NE4yM2RpMGRVMlFVTU14SGJrdlh1QTZJYTJCZTFmN2g5RkJ6K0xCcmpERDBSMXh4NVdYNldibVFBRWJveXRhQ1pTK0tRa1R3QzVxd1VDY3N6ZHFoZ1ZSRU5Za2dpNnRYV0FYR0hGbXVUQS9YcUxvUWxKVWM4MUFuTUdmTnhiczIwYXRaWjJmeFFKdSs1TEV5eHppUnhYcXRaMUZqOU5ESkt3aHJqY3RmdVpHVWZwR01ISHFSUU0vNW53bXBCTTFrVFQ2QkFZVS81ODdTR09jdFFPa2NheXBxRllaTVd6RVJqak5qZ2k2OGNHOWdvQT09PC9kczpTaWduYXR1cmVWYWx1ZT4KPGRzOktleUluZm8+PGRzOlg1MDlEYXRhPjxkczpYNTA5Q2VydGlmaWNhdGU+TUlJRHlqQ0NBcktnQXdJQkFnSUpBSk5PRnVRZDcyN2NNQTBHQ1NxR1NJYjNEUUVCQlFVQU1Fd3hDekFKQmdOVkJBWVRBbEpUTVJFd0R3WURWUVFJRXdoQ1pXeG5jbUZrWlRFU01CQUdBMVVFQ2hNSlRHbG5hSFJUUVUxTU1SWXdGQVlEVlFRREV3MXNhV2RvZEhOaGJXd3VZMjl0TUI0WERURTFNRGt4TXpFNU1ERTBNRm9YRFRJMU1Ea3hNREU1TURFME1Gb3dUREVMTUFrR0ExVUVCaE1DVWxNeEVUQVBCZ05WQkFnVENFSmxiR2R5WVdSbE1SSXdFQVlEVlFRS0V3bE1hV2RvZEZOQlRVd3hGakFVQmdOVkJBTVREV3hwWjJoMGMyRnRiQzVqYjIwd2dnRWlNQTBHQ1NxR1NJYjNEUUVCQVFVQUE0SUJEd0F3Z2dFS0FvSUJBUUM3cFVLT1BNeUUyb1NjSExQR0pGVGVwSzlqMUgwM2Uvcy9Xbk9Odzhad1lCYUJJWUlRdVg2dUU4akZQZEQwdVFTYVlwT3c1aDVUZ3E2eEJWN20ya1BPNTNoczhnRUdXUmJDZEN0eGk5RU1Kd0lPWXIraXNHME4rRHZWOUt5YkpmNnRxY001MFBpRmpWTnRmeDhJdWJNcEFLQ2JxdWFxZExhSEgwcmdQMWhiZ25HbTVZWmt5RUs0czh4dUxVRFM2cUw3TjdhL2V6MlprNDV1M0wzcUZjdW5jUEk1QlRuSmc2ZnFseXBEaENET0JJNUxqdzEwSG1nWkhQSVh6T2hFUFZWK3JYMmlIaEY0Vjl2ekVvZUlVQUJZWFFWTlJSTkhwUGRWc0s2aVRUa3l2YnJHSi90djNvRlpoTk9TTDBLdXkrUTlubEU5ZkVGcXlVeWRKNjd2c1hxWkFnTUJBQUdqZ2E0d2dhc3dIUVlEVlIwT0JCWUVGSFBUNkV5MXFneE16TUl0MmQzT1d1d3pmUFNVTUh3R0ExVWRJd1IxTUhPQUZIUFQ2RXkxcWd4TXpNSXQyZDNPV3V3emZQU1VvVkNrVGpCTU1Rc3dDUVlEVlFRR0V3SlNVekVSTUE4R0ExVUVDQk1JUW1Wc1ozSmhaR1V4RWpBUUJnTlZCQW9UQ1V4cFoyaDBVMEZOVERFV01CUUdBMVVFQXhNTmJHbG5hSFJ6WVcxc0xtTnZiWUlKQUpOT0Z1UWQ3MjdjTUF3R0ExVWRFd1FGTUFNQkFmOHdEUVlKS29aSWh2Y05BUUVGQlFBRGdnRUJBSGtIdHdKQm9lT2h2cjA2TTBNaWtLYzk5emU2VHFBR3ZmK1FrZ0ZvVjFzV0dBaDNOS2NBUitYU2xmSytzUVdySEdraWlhNWhXS2dBUE1NVWJrTFA5REZXa2piSzI0MWlzQ1paRC9MdkExYW5iVis3UGlkbitzd1o1ZFI3eW5YMnZqMGtGWWIrVnNHUGthdk5jajhSTi9EZHVoTi9UbWk1c1FBbFdoYXcwNlVBZUVxWHRGZUxiVGdMZmZCYWo3UG1SMElZanZUWkEwWDJGZFJ1MEdYUnhuN3pnaGpwdlNxOW51V2EzcEdiZmRWdEw2R0lrd1lVUGNEempyNE9lR1hObUlaZS93TUNuejZWR1pZK0xVZ3ppLzREQUM2VjNPak11aGRxUy8yK28xK0NYQ3dOMDhDSUhRVjYrQVVCZW5FVmF3TXNpYWRMQmd4M2tGZTVpWHJZUk1BPTwvZHM6WDUwOUNlcnRpZmljYXRlPjwvZHM6WDUwOURhdGE+PC9kczpLZXlJbmZvPjwvZHM6U2lnbmF0dXJlPjxTdWJqZWN0PjxOYW1lSUQgRm9ybWF0PSJ1cm46b2FzaXM6bmFtZXM6dGM6U0FNTDoxLjE6bmFtZWlkLWZvcm1hdDplbWFpbEFkZHJlc3MiPm93bmVyQGNvbXBhbnkuY29tPC9OYW1lSUQ+PC9TdWJqZWN0PjxDb25kaXRpb25zIE5vdEJlZm9yZT0iMjAyNi0wNC0wNVQwNjozMjo1NFoiIE5vdE9uT3JBZnRlcj0iMjAyNi0wNC0wNVQwNzozNzo1NFoiPjxBdWRpZW5jZVJlc3RyaWN0aW9uPjxBdWRpZW5jZT5odHRwOi8vbG9jYWxob3N0Ojg4ODcvcHJvamVjdHM8L0F1ZGllbmNlPjwvQXVkaWVuY2VSZXN0cmljdGlvbj48L0NvbmRpdGlvbnM+PEF0dHJpYnV0ZVN0YXRlbWVudD48QXR0cmlidXRlIE5hbWU9Imh0dHA6Ly9zY2hlbWFzLnhtbHNvYXAub3JnL3dzLzIwMDUvMDUvaWRlbnRpdHkvY2xhaW1zL2VtYWlsYWRkcmVzcyI+PEF0dHJpYnV0ZVZhbHVlPm93bmVyQGNvbXBhbnkuY29tPC9BdHRyaWJ1dGVWYWx1ZT48L0F0dHJpYnV0ZT48QXR0cmlidXRlIE5hbWU9InNlc3Npb25fZHVyYXRpb25fdHlwZSI+PEF0dHJpYnV0ZVZhbHVlPmxvbmc8L0F0dHJpYnV0ZVZhbHVlPjwvQXR0cmlidXRlPjwvQXR0cmlidXRlU3RhdGVtZW50PjwvQXNzZXJ0aW9uPjwvc2FtbHA6UmVzcG9uc2U+Cg=='
         ];
     }
 
@@ -57,16 +61,34 @@ class SamlUtilsTest extends TestCase
         $this->assertSame('http://www.w3.org/2001/04/xmldsig-more#rsa-sha256', $query['SigAlg']);
     }
 
+    private function getParsedResponse(): Response
+    {
+        $parsed_response = $this->saml_utils->parseSamlResponse(
+            $this->raw_saml_response,
+            $this->idp_certificate,
+            'http://localhost:8887/projects',
+            'http://localhost:8887/projects'
+        );
+
+        foreach ($parsed_response->getAllAssertions() as $assertion) {
+            $assertion->getConditions()
+                ->setNotBefore(time() - 3600)
+                ->setNotOnOrAfter(time() + 3600);
+        }
+
+        return $parsed_response;
+    }
+
     public function testParseSamlResponse()
     {
-        $parsed_response = $this->saml_utils->parseSamlResponse($this->raw_saml_response);
+        $parsed_response = $this->getParsedResponse();
 
         $this->assertInstanceOf(Response::class, $parsed_response);
     }
 
     public function testEmailAddress()
     {
-        $parsed_response = $this->saml_utils->parseSamlResponse($this->raw_saml_response);
+        $parsed_response = $this->getParsedResponse();
 
         $email = $this->saml_utils->getEmailAddress($parsed_response);
 
@@ -75,7 +97,7 @@ class SamlUtilsTest extends TestCase
 
     public function testSessionDuration()
     {
-        $parsed_response = $this->saml_utils->parseSamlResponse($this->raw_saml_response);
+        $parsed_response = $this->getParsedResponse();
 
         $session_duration_type = $this->saml_utils->getSessionDurationType($parsed_response);
 
@@ -84,10 +106,134 @@ class SamlUtilsTest extends TestCase
 
     public function testIssuerUrl()
     {
-        $parsed_response = $this->saml_utils->parseSamlResponse($this->raw_saml_response);
+        $parsed_response = $this->getParsedResponse();
 
         $url = $this->saml_utils->getIssuerUrl($parsed_response);
 
         $this->assertSame('http://localhost:8887/projects', $url);
+    }
+
+    public function testTamperedResponseIsRejected()
+    {
+        $this->expectException(InvalidSamlSignatureException::class);
+        $this->expectExceptionMessage('SAML signature verification failed');
+
+        $xml = base64_decode($this->raw_saml_response['SAMLResponse']);
+        $xml = str_replace('owner@company.com', 'tampered@company.com', $xml);
+        $tampered_payload = ['SAMLResponse' => base64_encode($xml)];
+
+        $this->saml_utils->parseSamlResponse(
+            $tampered_payload,
+            $this->idp_certificate,
+            'http://localhost:8887/projects',
+            'http://localhost:8887/projects'
+        );
+    }
+
+    public function testMissingSignatureIsRejected()
+    {
+        $this->expectException(InvalidSamlSignatureException::class);
+        $this->expectExceptionMessage('SAML response is not signed.');
+
+        $xml = base64_decode($this->raw_saml_response['SAMLResponse']);
+        // Remove Signature element.
+        $xml = preg_replace('/<ds:Signature.*<\/ds:Signature>/Uis', '', $xml);
+        $unsigned_payload = ['SAMLResponse' => base64_encode($xml)];
+
+        $this->saml_utils->parseSamlResponse(
+            $unsigned_payload,
+            $this->idp_certificate,
+            'http://localhost:8887/projects',
+            'http://localhost:8887/projects'
+        );
+    }
+
+    public function testWrongCertificateIsRejected()
+    {
+        $this->expectException(InvalidSamlSignatureException::class);
+        $this->expectExceptionMessage('SAML signature verification failed');
+
+        $res = openssl_pkey_new(['private_key_bits' => 2048, 'private_key_type' => OPENSSL_KEYTYPE_RSA]);
+        $csr = openssl_csr_new(['commonName' => 'wrong-idp'], $res);
+        $x509 = openssl_csr_sign($csr, null, $res, 1);
+        openssl_x509_export($x509, $wrong_certificate);
+
+        $this->saml_utils->parseSamlResponse(
+            $this->raw_saml_response,
+            $wrong_certificate,
+            'http://localhost:8887/projects',
+            'http://localhost:8887/projects'
+        );
+    }
+
+    public function testExpiredAssertionIsRejected()
+    {
+        $this->expectException(InvalidSamlResponseException::class);
+        $this->expectExceptionMessage('SAML assertion has expired.');
+
+        $parsed_response = $this->saml_utils->parseSamlResponse(
+            $this->raw_saml_response,
+            $this->idp_certificate,
+            'http://localhost:8887/projects',
+            'http://localhost:8887/projects'
+        );
+
+        // Manually set an expired condition
+        foreach ($parsed_response->getAllAssertions() as $assertion) {
+            $assertion->getConditions()->setNotOnOrAfter(time() - 3600);
+        }
+
+        $this->saml_utils->validateAssertionConditions(
+            $parsed_response,
+            'http://localhost:8887/projects',
+            'http://localhost:8887/projects'
+        );
+    }
+
+    public function testWrongDestinationIsRejected()
+    {
+        $this->expectException(InvalidSamlResponseException::class);
+        $this->expectExceptionMessage('SAML response destination mismatch.');
+
+        $this->saml_utils->parseSamlResponse(
+            $this->raw_saml_response,
+            $this->idp_certificate,
+            'http://wrong-destination.com',
+            'http://localhost:8887/projects'
+        );
+    }
+
+    public function testWrongAudienceIsRejected()
+    {
+        $this->expectException(InvalidSamlResponseException::class);
+        $this->expectExceptionMessage('SAML assertion audience mismatch.');
+
+        $this->saml_utils->parseSamlResponse(
+            $this->raw_saml_response,
+            $this->idp_certificate,
+            'http://localhost:8887/projects',
+            'http://wrong-audience.com'
+        );
+    }
+
+    public function testSha1IsRejected()
+    {
+        $this->expectException(InvalidSamlSignatureException::class);
+        $this->expectExceptionMessage('SAML signature verification failed: Weak algorithm');
+
+        $xml = base64_decode($this->raw_saml_response['SAMLResponse']);
+        $xml = str_replace(
+            'http://www.w3.org/2001/04/xmldsig-more#rsa-sha256',
+            'http://www.w3.org/2000/09/xmldsig#rsa-sha1',
+            $xml
+        );
+        $weak_payload = ['SAMLResponse' => base64_encode($xml)];
+
+        $this->saml_utils->parseSamlResponse(
+            $weak_payload,
+            $this->idp_certificate,
+            'http://localhost:8887/projects',
+            'http://localhost:8887/projects'
+        );
     }
 }
