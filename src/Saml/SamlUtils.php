@@ -34,6 +34,11 @@ use Symfony\Component\HttpFoundation\RedirectResponse;
 
 class SamlUtils
 {
+    private const ALLOWED_SIGNATURE_ALGORITHMS = [
+        XMLSecurityKey::RSA_SHA1,
+        XMLSecurityKey::RSA_SHA256,
+    ];
+
     const SESSION_DURATION_TYPE_ATTRIBUTE_NAME = 'session_duration_type';
 
     /**
@@ -141,8 +146,8 @@ class SamlUtils
             throw new InvalidSamlSignatureException('SAML signature algorithm not specified.');
         }
 
-        if ($algorithm_uri === XMLSecurityKey::RSA_SHA1) {
-            throw new InvalidSamlSignatureException('SAML signature verification failed: Weak algorithm.');
+        if (!in_array($algorithm_uri, self::ALLOWED_SIGNATURE_ALGORITHMS)) {
+            throw new InvalidSamlSignatureException('SAML signature algorithm not allowed: ' . $algorithm_uri);
         }
 
         $key = new XMLSecurityKey($algorithm_uri, ['type' => 'public']);
