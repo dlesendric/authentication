@@ -21,17 +21,14 @@
         "activecollab/utils": "^3.0",
         "activecollab/user": "^4.0",
         "google/apiclient": "^2.1",
+        "lightsaml/lightsaml": "^2.0",
         "psr/http-server-middleware": "^1.0"
     },
     "require-dev": {
         "friendsofphp/php-cs-fixer": "^2.0",
-        "lightsaml/lightsaml": "^2.0",
         "phpunit/phpunit": "^9.0",
         "satooshi/php-coveralls": "^1.0",
         "laminas/laminas-diactoros": "^2.0"
-    },
-    "suggest": {
-        "lightsaml/lightsaml": "If you want to use SAML authentication you should manually install this package."
     },
     "minimum-stability": "stable",
     "autoload": {

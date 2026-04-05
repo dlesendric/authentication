@@ -82,12 +82,13 @@ class SamlUtils
     }
 
     /**
-     * Parse saml response.
+     * Parse saml response and validate its signature against the trusted IDP certificate.
      *
      * @param  array    $payload
+     * @param  string   $idp_certificate PEM-encoded public certificate of the trusted IDP
      * @return Response
      */
-    public function parseSamlResponse(array $payload)
+    public function parseSamlResponse(array $payload, string $idp_certificate): Response
     {
         $deserialization_context = new DeserializationContext();
         $deserialization_context->getDocument()->loadXML(base64_decode($payload['SAMLResponse']));
@@ -95,7 +96,40 @@ class SamlUtils
         $saml_response = new Response();
         $saml_response->deserialize($deserialization_context->getDocument()->firstChild, $deserialization_context);
 
+        $this->validateSignature($saml_response, $idp_certificate);
+
         return $saml_response;
+    }
+
+    private function validateSignature(Response $saml_response, string $idp_certificate): void
+    {
+        if (empty($idp_certificate)) {
+            throw new InvalidArgumentException('IDP certificate is required for SAML signature validation');
+        }
+
+        $certificate = new X509Certificate();
+        $certificate->loadPem($idp_certificate);
+        $key = KeyHelper::createPublicKey($certificate);
+
+        $signed = false;
+
+        $response_signature = $saml_response->getSignature();
+        if ($response_signature !== null) {
+            $response_signature->validate($key);
+            $signed = true;
+        }
+
+        foreach ($saml_response->getAllAssertions() as $assertion) {
+            $assertion_signature = $assertion->getSignature();
+            if ($assertion_signature !== null) {
+                $assertion_signature->validate($key);
+                $signed = true;
+            }
+        }
+
+        if (!$signed) {
+            throw new InvalidArgumentException('SAML response contains no signature');
+        }
     }
 
     /**

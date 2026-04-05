@@ -11,20 +11,59 @@ namespace ActiveCollab\Authentication\Test\Saml;
 use ActiveCollab\Authentication\Saml\SamlUtils;
 use ActiveCollab\Authentication\Session\SessionInterface;
 use ActiveCollab\Authentication\Test\TestCase\TestCase;
+use LightSaml\ClaimTypes;
+use LightSaml\Credential\KeyHelper;
+use LightSaml\Credential\X509Certificate;
+use LightSaml\Error\LightSamlSecurityException;
+use LightSaml\Model\Assertion\Assertion;
+use LightSaml\Model\Assertion\Attribute;
+use LightSaml\Model\Assertion\AttributeStatement;
+use LightSaml\Model\Assertion\Issuer;
+use LightSaml\Model\Assertion\NameID;
+use LightSaml\Model\Assertion\Subject;
+use LightSaml\Model\Context\SerializationContext;
 use LightSaml\Model\Protocol\Response;
+use LightSaml\Model\XmlDSig\SignatureWriter;
+use LightSaml\SamlConstants;
+use RobRichards\XMLSecLibs\XMLSecurityDSig;
+use RobRichards\XMLSecLibs\XMLSecurityKey;
 
 class SamlUtilsTest extends TestCase
 {
     private SamlUtils $saml_utils;
-    private array $raw_saml_response;
+    private string $idp_certificate;
+    private string $idp_private_key;
+    private array $signed_saml_response;
+    private array $unsigned_saml_response;
 
     public function setUp(): void
     {
         parent::setUp();
 
         $this->saml_utils = new SamlUtils();
-        $this->raw_saml_response = [
-            'SAMLResponse' => 'PD94bWwgdmVyc2lvbj0iMS4wIj8+DQo8c2FtbHA6UmVzcG9uc2UgeG1sbnM6c2FtbHA9InVybjpvYXNpczpuYW1lczp0YzpTQU1MOjIuMDpwcm90b2NvbCIgSUQ9Il9iMTkxMGJiMDM2OTQ0ODAzYTVkZTA5ZTU0OWYwNzJiYWIyMDg3Yjk1Y2YiIFZlcnNpb249IjIuMCIgSXNzdWVJbnN0YW50PSIyMDE2LTExLTE1VDA5OjU1OjA1WiIgRGVzdGluYXRpb249Imh0dHA6Ly9sb2NhbGhvc3Q6ODg4Ny9hcGkvdjEvdXNlci1zZXNzaW9uIj48c2FtbDpJc3N1ZXIgeG1sbnM6c2FtbD0idXJuOm9hc2lzOm5hbWVzOnRjOlNBTUw6Mi4wOmFzc2VydGlvbiI+aHR0cDovL2xvY2FsaG9zdDo4ODg3L3Byb2plY3RzPC9zYW1sOklzc3Vlcj48ZHM6U2lnbmF0dXJlIHhtbG5zOmRzPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwLzA5L3htbGRzaWcjIj4NCiAgPGRzOlNpZ25lZEluZm8+PGRzOkNhbm9uaWNhbGl6YXRpb25NZXRob2QgQWxnb3JpdGhtPSJodHRwOi8vd3d3LnczLm9yZy8yMDAxLzEwL3htbC1leGMtYzE0biMiLz4NCiAgICA8ZHM6U2lnbmF0dXJlTWV0aG9kIEFsZ29yaXRobT0iaHR0cDovL3d3dy53My5vcmcvMjAwMC8wOS94bWxkc2lnI3JzYS1zaGExIi8+DQogIDxkczpSZWZlcmVuY2UgVVJJPSIjX2IxOTEwYmIwMzY5NDQ4MDNhNWRlMDllNTQ5ZjA3MmJhYjIwODdiOTVjZiI+PGRzOlRyYW5zZm9ybXM+PGRzOlRyYW5zZm9ybSBBbGdvcml0aG09Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvMDkveG1sZHNpZyNlbnZlbG9wZWQtc2lnbmF0dXJlIi8+PGRzOlRyYW5zZm9ybSBBbGdvcml0aG09Imh0dHA6Ly93d3cudzMub3JnLzIwMDEvMTAveG1sLWV4Yy1jMTRuIyIvPjwvZHM6VHJhbnNmb3Jtcz48ZHM6RGlnZXN0TWV0aG9kIEFsZ29yaXRobT0iaHR0cDovL3d3dy53My5vcmcvMjAwMC8wOS94bWxkc2lnI3NoYTEiLz48ZHM6RGlnZXN0VmFsdWU+NERoS1BwbHRLQ1ZYcjRmNjhQZmxoOE8vTTlzPTwvZHM6RGlnZXN0VmFsdWU+PC9kczpSZWZlcmVuY2U+PC9kczpTaWduZWRJbmZvPjxkczpTaWduYXR1cmVWYWx1ZT5SZU9qL2xFemlBc3dKUWNmQ1RBYzJxYm5aS1MrT2FZUFcydWh1UW9hZVgzbjFibXBRZWcySnlOd0dHcWlHd0lZN0JwU3poMEFEeGhwZlJYSjEwZ2xNQmhNZlVmcnBTN3hMYm82VThpS1A4ZjBDUUJtd0Z2WVhpU2RrRVg1bGIyRkY0bkY0b1M4dVJWVkcrUGpjL0hWYkJOcnQxaDg0bHRTYTdwMnZmSDdua1hkRmI3ZEhQOFFFSUUxY0UzbG0xeU8wbkZLa25KbHNVd0JELzFGbVFDRkFQcEk4cFpaVElibi9ITWlPeUE5VlU0Q1dtNzA0WHlzT2crRkJDZFN6REJzbHNWTktUL01HaCs1bTNnQmhsREl6ZnkvTHZnNGl3YkVZVzdPeWxxZjUxYi9uODU4ekNremM5WVp0MEpvUlZsS1Nkc2cwOVFNcUJWWGFvaG1kYWhpZmc9PTwvZHM6U2lnbmF0dXJlVmFsdWU+DQo8ZHM6S2V5SW5mbz48ZHM6WDUwOURhdGE+PGRzOlg1MDlDZXJ0aWZpY2F0ZT5NSUlEeWpDQ0FyS2dBd0lCQWdJSkFKTk9GdVFkNzI3Y01BMEdDU3FHU0liM0RRRUJCUVVBTUV3eEN6QUpCZ05WQkFZVEFsSlRNUkV3RHdZRFZRUUlFd2hDWld4bmNtRmtaVEVTTUJBR0ExVUVDaE1KVEdsbmFIUlRRVTFNTVJZd0ZBWURWUVFERXcxc2FXZG9kSE5oYld3dVkyOXRNQjRYRFRFMU1Ea3hNekU1TURFME1Gb1hEVEkxTURreE1ERTVNREUwTUZvd1RERUxNQWtHQTFVRUJoTUNVbE14RVRBUEJnTlZCQWdUQ0VKbGJHZHlZV1JsTVJJd0VBWURWUVFLRXdsTWFXZG9kRk5CVFV3eEZqQVVCZ05WQkFNVERXeHBaMmgwYzJGdGJDNWpiMjB3Z2dFaU1BMEdDU3FHU0liM0RRRUJBUVVBQTRJQkR3QXdnZ0VLQW9JQkFRQzdwVUtPUE15RTJvU2NITFBHSkZUZXBLOWoxSDAzZS9zL1duT053OFp3WUJhQklZSVF1WDZ1RThqRlBkRDB1UVNhWXBPdzVoNVRncTZ4QlY3bTJrUE81M2hzOGdFR1dSYkNkQ3R4aTlFTUp3SU9Zcitpc0cwTitEdlY5S3liSmY2dHFjTTUwUGlGalZOdGZ4OEl1Yk1wQUtDYnF1YXFkTGFISDByZ1AxaGJnbkdtNVlaa3lFSzRzOHh1TFVEUzZxTDdON2EvZXoyWms0NXUzTDNxRmN1bmNQSTVCVG5KZzZmcWx5cERoQ0RPQkk1TGp3MTBIbWdaSFBJWHpPaEVQVlYrclgyaUhoRjRWOXZ6RW9lSVVBQllYUVZOUlJOSHBQZFZzSzZpVFRreXZickdKL3R2M29GWmhOT1NMMEt1eStROW5sRTlmRUZxeVV5ZEo2N3ZzWHFaQWdNQkFBR2pnYTR3Z2Fzd0hRWURWUjBPQkJZRUZIUFQ2RXkxcWd4TXpNSXQyZDNPV3V3emZQU1VNSHdHQTFVZEl3UjFNSE9BRkhQVDZFeTFxZ3hNek1JdDJkM09XdXd6ZlBTVW9WQ2tUakJNTVFzd0NRWURWUVFHRXdKU1V6RVJNQThHQTFVRUNCTUlRbVZzWjNKaFpHVXhFakFRQmdOVkJBb1RDVXhwWjJoMFUwRk5UREVXTUJRR0ExVUVBeE1OYkdsbmFIUnpZVzFzTG1OdmJZSUpBSk5PRnVRZDcyN2NNQXdHQTFVZEV3UUZNQU1CQWY4d0RRWUpLb1pJaHZjTkFRRUZCUUFEZ2dFQkFIa0h0d0pCb2VPaHZyMDZNME1pa0tjOTl6ZTZUcUFHdmYrUWtnRm9WMXNXR0FoM05LY0FSK1hTbGZLK3NRV3JIR2tpaWE1aFdLZ0FQTU1VYmtMUDlERldramJLMjQxaXNDWlpEL0x2QTFhbmJWKzdQaWRuK3N3WjVkUjd5blgydmowa0ZZYitWc0dQa2F2TmNqOFJOL0RkdWhOL1RtaTVzUUFsV2hhdzA2VUFlRXFYdEZlTGJUZ0xmZkJhajdQbVIwSVlqdlRaQTBYMkZkUnUwR1hSeG43emdoanB2U3E5bnVXYTNwR2JmZFZ0TDZHSWt3WVVQY0R6anI0T2VHWE5tSVplL3dNQ256NlZHWlkrTFVnemkvNERBQzZWM09qTXVoZHFTLzIrbzErQ1hDd04wOENJSFFWNitBVUJlbkVWYXdNc2lhZExCZ3gza0ZlNWlYcllSTUE9PC9kczpYNTA5Q2VydGlmaWNhdGU+PC9kczpYNTA5RGF0YT48L2RzOktleUluZm8+PC9kczpTaWduYXR1cmU+PEFzc2VydGlvbiB4bWxucz0idXJuOm9hc2lzOm5hbWVzOnRjOlNBTUw6Mi4wOmFzc2VydGlvbiIgSUQ9Il9jZWI4NjIwODc4MTg2NjVmMDM5MzdkMzE4MGU3OGJkY2UzZWNhMDBhZDQiIFZlcnNpb249IjIuMCIgSXNzdWVJbnN0YW50PSIyMDE2LTExLTE1VDA5OjU1OjA1WiI+PElzc3Vlcj5odHRwOi8vbG9jYWxob3N0Ojg4ODcvcHJvamVjdHM8L0lzc3Vlcj48U3ViamVjdD48TmFtZUlEIEZvcm1hdD0idXJuOm9hc2lzOm5hbWVzOnRjOlNBTUw6MS4xOm5hbWVpZC1mb3JtYXQ6ZW1haWxBZGRyZXNzIj5vd25lckBjb21wYW55LmNvbTwvTmFtZUlEPjxTdWJqZWN0Q29uZmlybWF0aW9uIE1ldGhvZD0idXJuOm9hc2lzOm5hbWVzOnRjOlNBTUw6Mi4wOmNtOmJlYXJlciI+PFN1YmplY3RDb25maXJtYXRpb25EYXRhIEluUmVzcG9uc2VUbz0iaWRfb2ZfdGhlX2F1dGhuX3JlcXVlc3QiIE5vdE9uT3JBZnRlcj0iMjAxNi0xMS0xNVQwOTo1NjowNVoiIFJlY2lwaWVudD0iaHR0cDovL2xvY2FsaG9zdDo4ODg3L2FwaS92MS91c2VyLXNlc3Npb24iLz48L1N1YmplY3RDb25maXJtYXRpb24+PC9TdWJqZWN0PjxDb25kaXRpb25zIE5vdEJlZm9yZT0iMjAxNi0xMS0xNVQwOTo1NTowNVoiIE5vdE9uT3JBZnRlcj0iMjAxNi0xMS0xNVQwOTo1NjowNVoiPjxBdWRpZW5jZVJlc3RyaWN0aW9uPjxBdWRpZW5jZT5odHRwOi8vbG9jYWxob3N0Ojg4ODcvYXBpL3YxL3VzZXItc2Vzc2lvbjwvQXVkaWVuY2U+PC9BdWRpZW5jZVJlc3RyaWN0aW9uPjwvQ29uZGl0aW9ucz48QXR0cmlidXRlU3RhdGVtZW50PjxBdHRyaWJ1dGUgTmFtZT0iaHR0cDovL3NjaGVtYXMueG1sc29hcC5vcmcvd3MvMjAwNS8wNS9pZGVudGl0eS9jbGFpbXMvZW1haWxhZGRyZXNzIj48QXR0cmlidXRlVmFsdWU+b3duZXJAY29tcGFueS5jb208L0F0dHJpYnV0ZVZhbHVlPjwvQXR0cmlidXRlPjxBdHRyaWJ1dGUgTmFtZT0ic2Vzc2lvbl9kdXJhdGlvbl90eXBlIj48QXR0cmlidXRlVmFsdWU+bG9uZzwvQXR0cmlidXRlVmFsdWU+PC9BdHRyaWJ1dGU+PC9BdHRyaWJ1dGVTdGF0ZW1lbnQ+PEF1dGhuU3RhdGVtZW50IEF1dGhuSW5zdGFudD0iMjAxNi0xMS0xNVQwOTo0NTowNVoiIFNlc3Npb25JbmRleD0iX3NvbWVfc2Vzc2lvbl9pbmRleCI+PEF1dGhuQ29udGV4dD48QXV0aG5Db250ZXh0Q2xhc3NSZWY+dXJuOm9hc2lzOm5hbWVzOnRjOlNBTUw6Mi4wOmFjOmNsYXNzZXM6UGFzc3dvcmRQcm90ZWN0ZWRUcmFuc3BvcnQ8L0F1dGhuQ29udGV4dENsYXNzUmVmPjwvQXV0aG5Db250ZXh0PjwvQXV0aG5TdGF0ZW1lbnQ+PC9Bc3NlcnRpb24+PC9zYW1scDpSZXNwb25zZT4NCg==',
+
+        [$this->idp_certificate, $this->idp_private_key] = $this->generateKeyPair();
+
+        $this->signed_saml_response = [
+            'SAMLResponse' => $this->createSignedSamlResponse(
+                'owner@company.com',
+                SessionInterface::SESSION_DURATION_LONG,
+                'http://localhost:8887/projects',
+                $this->idp_certificate,
+                $this->idp_private_key
+            ),
+        ];
+
+        $this->unsigned_saml_response = [
+            'SAMLResponse' => base64_encode(
+                '<?xml version="1.0"?>'
+                . '<samlp:Response xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" ID="_nosig" Version="2.0" IssueInstant="2016-11-15T09:55:05Z">'
+                . '<saml:Issuer xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion">http://localhost:8887/projects</saml:Issuer>'
+                . '<Assertion xmlns="urn:oasis:names:tc:SAML:2.0:assertion" ID="_a" Version="2.0" IssueInstant="2016-11-15T09:55:05Z">'
+                . '<Issuer>http://localhost:8887/projects</Issuer>'
+                . '</Assertion>'
+                . '</samlp:Response>'
+            ),
         ];
     }
 
@@ -59,35 +98,110 @@ class SamlUtilsTest extends TestCase
 
     public function testParseSamlResponse()
     {
-        $parsed_response = $this->saml_utils->parseSamlResponse($this->raw_saml_response);
+        $parsed_response = $this->saml_utils->parseSamlResponse($this->signed_saml_response, $this->idp_certificate);
 
         $this->assertInstanceOf(Response::class, $parsed_response);
     }
 
+    public function testParseSamlResponseThrowsOnInvalidSignature()
+    {
+        $this->expectException(LightSamlSecurityException::class);
+
+        [$wrong_certificate] = $this->generateKeyPair();
+        $this->saml_utils->parseSamlResponse($this->signed_saml_response, $wrong_certificate);
+    }
+
+    public function testParseSamlResponseThrowsOnMissingSignature()
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('SAML response contains no signature');
+
+        $this->saml_utils->parseSamlResponse($this->unsigned_saml_response, $this->idp_certificate);
+    }
+
+    public function testParseSamlResponseThrowsOnEmptyCertificate()
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('IDP certificate is required for SAML signature validation');
+
+        $this->saml_utils->parseSamlResponse($this->signed_saml_response, '');
+    }
+
     public function testEmailAddress()
     {
-        $parsed_response = $this->saml_utils->parseSamlResponse($this->raw_saml_response);
+        $parsed_response = $this->saml_utils->parseSamlResponse($this->signed_saml_response, $this->idp_certificate);
 
-        $email = $this->saml_utils->getEmailAddress($parsed_response);
-
-        $this->assertSame('owner@company.com', $email);
+        $this->assertSame('owner@company.com', $this->saml_utils->getEmailAddress($parsed_response));
     }
 
     public function testSessionDuration()
     {
-        $parsed_response = $this->saml_utils->parseSamlResponse($this->raw_saml_response);
+        $parsed_response = $this->saml_utils->parseSamlResponse($this->signed_saml_response, $this->idp_certificate);
 
-        $session_duration_type = $this->saml_utils->getSessionDurationType($parsed_response);
-
-        $this->assertSame(SessionInterface::SESSION_DURATION_LONG, $session_duration_type);
+        $this->assertSame(
+            SessionInterface::SESSION_DURATION_LONG,
+            $this->saml_utils->getSessionDurationType($parsed_response)
+        );
     }
 
     public function testIssuerUrl()
     {
-        $parsed_response = $this->saml_utils->parseSamlResponse($this->raw_saml_response);
+        $parsed_response = $this->saml_utils->parseSamlResponse($this->signed_saml_response, $this->idp_certificate);
 
-        $url = $this->saml_utils->getIssuerUrl($parsed_response);
+        $this->assertSame('http://localhost:8887/projects', $this->saml_utils->getIssuerUrl($parsed_response));
+    }
 
-        $this->assertSame('http://localhost:8887/projects', $url);
+    private function generateKeyPair(): array
+    {
+        $key = openssl_pkey_new(['private_key_bits' => 2048, 'private_key_type' => OPENSSL_KEYTYPE_RSA]);
+        $csr = openssl_csr_new(['commonName' => 'test-idp'], $key);
+        $x509 = openssl_csr_sign($csr, null, $key, 365);
+
+        openssl_x509_export($x509, $cert_pem);
+        openssl_pkey_export($key, $key_pem);
+
+        return [$cert_pem, $key_pem];
+    }
+
+    private function createSignedSamlResponse(
+        string $email,
+        string $session_duration,
+        string $issuer_url,
+        string $cert_pem,
+        string $key_pem
+    ): string {
+        $certificate = new X509Certificate();
+        $certificate->loadPem($cert_pem);
+        $private_key = KeyHelper::createPrivateKey($key_pem, '', false, XMLSecurityKey::RSA_SHA256);
+
+        $email_attr = (new Attribute())
+            ->setName(ClaimTypes::EMAIL_ADDRESS)
+            ->addAttributeValue($email);
+
+        $session_attr = (new Attribute())
+            ->setName(SamlUtils::SESSION_DURATION_TYPE_ATTRIBUTE_NAME)
+            ->addAttributeValue($session_duration);
+
+        $attr_stmt = (new AttributeStatement())
+            ->addAttribute($email_attr)
+            ->addAttribute($session_attr);
+
+        $subject = (new Subject())
+            ->setNameID((new NameID())->setFormat(SamlConstants::NAME_ID_FORMAT_EMAIL)->setValue($email));
+
+        $assertion = new Assertion();
+        $assertion->setIssuer(new Issuer($issuer_url));
+        $assertion->setSubject($subject);
+        $assertion->addItem($attr_stmt);
+        $assertion->setSignature(new SignatureWriter($certificate, $private_key, XMLSecurityDSig::SHA256));
+
+        $response = new Response();
+        $response->setIssuer(new Issuer($issuer_url));
+        $response->addAssertion($assertion);
+
+        $context = new SerializationContext();
+        $response->serialize($context->getDocument(), $context);
+
+        return base64_encode($context->getDocument()->saveXML());
     }
 }
